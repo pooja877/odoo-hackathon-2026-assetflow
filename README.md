@@ -1,6 +1,8 @@
-# Asset Management System
+# AssetFlow
 
-A fast hackathon-friendly full-stack app for managing assets, allocations, bookings, maintenance, audits, and notifications.
+Enterprise Asset & Resource Management System built for the **Odoo Hackathon 2026**.
+
+A full-stack application for managing organizational assets, resource bookings, maintenance workflows, audits, allocations, and notifications.
 
 ## Tech Stack
 
@@ -20,47 +22,44 @@ A fast hackathon-friendly full-stack app for managing assets, allocations, booki
 - JWT Authentication
 
 ### Database
-- SQLite for fast development and demo
-- Can be migrated to PostgreSQL later
+- SQLite
+
+## Features
+
+- JWT Authentication
+- Role-Based Access Control
+- Department & Employee Management
+- Asset Registration & Tracking
+- Asset Allocation & Transfer
+- Resource Booking
+- Maintenance Workflow
+- Audit Management
+- Dashboard & Reports
+- Notifications
 
 ## Frontend Structure
 
+```text
 frontend/
 ├── src/
 │   ├── pages/
-│   │   ├── Login.jsx
-│   │   ├── Dashboard.jsx
-│   │   ├── OrganizationSetup.jsx
-│   │   ├── AssetDirectory.jsx
-│   │   ├── AllocationTransfer.jsx
-│   │   ├── ResourceBooking.jsx
-│   │   ├── Maintenance.jsx
-│   │   ├── Audit.jsx
-│   │   ├── Reports.jsx
-│   │   └── Notifications.jsx
 │   ├── components/
-│   │   ├── Sidebar.jsx
-│   │   ├── Navbar.jsx
-│   │   ├── AssetForm.jsx
-│   │   ├── AllocationForm.jsx
-│   │   ├── BookingForm.jsx
-│   │   ├── MaintenanceForm.jsx
-│   │   ├── AuditForm.jsx
-│   │   ├── NotificationCard.jsx
-│   │   ├── DashboardCards.jsx
-│   │   └── Charts.jsx
 │   ├── services/
-│   │   ├── authService.js
-│   │   ├── assetService.js
-│   │   ├── allocationService.js
-│   │   ├── bookingService.js
-│   │   ├── maintenanceService.js
-│   │   ├── auditService.js
-│   │   ├── reportService.js
-│   │   └── notificationService.js
 │   ├── App.jsx
 │   └── main.jsx
+```
 
-## Notes
+## Backend Structure
 
-Focus on a working demo first. Extra features and database scaling can be added after the core flow is complete.
+```text
+backend/
+├── app/
+│   ├── models/
+│   ├── routers/
+│   ├── schemas/
+│   ├── utils/
+│   ├── auth.py
+│   ├── config.py
+│   ├── database.py
+│   └── main.py
+```
