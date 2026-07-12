@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
-from app.routers import auth, department, user, stats, booking, asset, category, allocation, audit, maintenance, activity
+from app.routers import auth, department, user, stats, booking, asset, category, allocation, audit, maintenance, activity, report
 
 from app.models.asset import Asset
 from app.models.category import Category
@@ -40,6 +40,7 @@ app.include_router(allocation.router)
 app.include_router(audit.router)
 app.include_router(maintenance.router)
 app.include_router(activity.router)
+app.include_router(report.router)
 
 @app.get("/")
 def root():
