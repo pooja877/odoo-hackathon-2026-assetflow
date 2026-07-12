@@ -23,6 +23,14 @@ class User(Base):
 
     status = Column(Boolean, default=True)
 
+    @property
+    def is_active(self):
+        return self.status
+
+    @is_active.setter
+    def is_active(self, value):
+        self.status = value
+
     department_id = Column(
         Integer,
         ForeignKey("departments.id"),
