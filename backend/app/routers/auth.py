@@ -18,17 +18,32 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    # Bootstrapping: first registered user becomes an active Admin
+    total_users = db.query(User).count()
+    is_first_user = total_users == 0
+
     new_user = User(
         name=user.name,
         email=user.email,
-        password=hash_password(user.password)
+        password=hash_password(user.password),
+        role="Admin" if is_first_user else "Employee",
+        is_active=True if is_first_user else False,
+        department_id=user.department_id,
+        designation=user.designation
     )
 
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
-    return {"message": "Account created successfully"}
+    # Generate employee ID for them
+    new_user.employee_id = f"EMP{new_user.id:03d}"
+    db.commit()
+    db.refresh(new_user)
+
+    if is_first_user:
+        return {"message": "Admin account created and approved successfully"}
+    return {"message": "Account created successfully. Pending administrator approval."}
 
 
 @router.post("/login", response_model=Token)
@@ -45,6 +60,9 @@ def login(
 
     if not verify_password(form_data.password, db_user.password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    if not db_user.is_active:
+        raise HTTPException(status_code=403, detail="Account is pending approval. Please contact an admin.")
 
     access_token = create_access_token(
         data={
