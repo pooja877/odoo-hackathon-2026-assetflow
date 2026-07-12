@@ -36,13 +36,23 @@ def create_ticket(
         created_at=datetime.utcnow()
     )
     
-    # Add activity log
+    # Add activity log and notification
+    from app.models.activity import Notification
     log = ActivityLog(
         text=f"Raised maintenance ticket for {asset.name} ({asset.asset_tag})",
         user=current_user.name,
         created_at=datetime.utcnow()
     )
+    notif = Notification(
+        user_id=None,  # Null user_id targets Admins/global dashboard
+        type="Alerts",
+        title="Maintenance Request Raised",
+        text=f"{current_user.name} raised ticket for {asset.name} ({asset.asset_tag})",
+        unread=True,
+        created_at=datetime.utcnow()
+    )
     db.add(log)
+    db.add(notif)
     db.add(new_tkt)
     db.commit()
     db.refresh(new_tkt)
@@ -92,6 +102,18 @@ def update_ticket_status(
         elif payload.status == "resolved":
             asset.status = "Available"
             
+    # Create notification for employee who raised the ticket
+    from app.models.activity import Notification
+    notif = Notification(
+        user_id=tkt.user_id,
+        type="Alerts",
+        title="Maintenance Ticket Update",
+        text=f"Your ticket #{tkt.id} for {asset.name if asset else 'Asset'} status is now '{payload.status}'.",
+        unread=True,
+        created_at=datetime.utcnow()
+    )
+    db.add(notif)
+
     db.commit()
     db.refresh(tkt)
     return tkt

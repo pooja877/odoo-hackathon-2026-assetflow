@@ -11,6 +11,7 @@ from app.models.user import User
 from fastapi.responses import StreamingResponse
 import io
 import csv
+from datetime import datetime
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
@@ -74,12 +75,54 @@ def get_booking_heatmap(db: Session = Depends(get_db), current_user: User = Depe
 
 @router.get("/export")
 def export_report(type: str = "csv", db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    assets = db.query(Asset).all()
+
+    if type.lower() == "pdf":
+        # Minimal valid PDF 1.4 builder
+        pdf_stream = (
+            "%PDF-1.4\n"
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+            "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
+            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
+            "4 0 obj\n"
+        )
+        stream_content = "BT /F1 14 Tf 50 800 Td (AssetFlow ERP Asset Audit Report) Tj ET\n"
+        stream_content += f"BT /F1 10 Tf 50 780 Td (Generated on: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}) Tj ET\n"
+        y = 740
+        for a in assets:
+            name_clean = a.name.replace("(", "\\(").replace(")", "\\)")
+            tag_clean = a.asset_tag.replace("(", "\\(").replace(")", "\\)")
+            loc_clean = a.location.replace("(", "\\(").replace(")", "\\)")
+            line_txt = f"{tag_clean} - {name_clean} | Status: {a.status} | Location: {loc_clean}"
+            stream_content += f"BT /F1 9 Tf 50 {y} Td ({line_txt}) Tj ET\n"
+            y -= 20
+            if y < 50:
+                break
+                
+        stream_bytes = stream_content.encode("utf-8")
+        pdf_stream += f"<< /Length {len(stream_bytes)} >>\nstream\n"
+        pdf_stream += stream_content
+        pdf_stream += (
+            "endstream\nendobj\n"
+            "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
+            "xref\n"
+            "0 6\n"
+            "0000000000 65535 f\n"
+            "trailer\n<< /Size 6 /Root 1 0 R >>\n"
+            "startxref\n"
+            "0\n"
+            "%%EOF\n"
+        )
+        
+        response = StreamingResponse(io.BytesIO(pdf_stream.encode("utf-8")), media_type="application/pdf")
+        response.headers["Content-Disposition"] = "attachment; filename=asset_report.pdf"
+        return response
+
     # Stream a simple CSV file as download
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Asset Tag", "Asset Name", "Serial Number", "Location", "Condition", "Status"])
     
-    assets = db.query(Asset).all()
     for a in assets:
         writer.writerow([a.asset_tag, a.name, a.serial_number, a.location, a.condition, a.status])
         

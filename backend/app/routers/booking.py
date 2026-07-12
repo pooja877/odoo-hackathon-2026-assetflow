@@ -78,6 +78,23 @@ def book_resource(
         status="Upcoming"
     )
     db.add(new_booking)
+    
+    # Create notification and log
+    from app.models.activity import Notification, ActivityLog
+    notif = Notification(
+        user_id=current_user.id,
+        type="Bookings",
+        title="Booking Confirmed",
+        text=f"Confirmed booking for {res.name} on {booking.start_time.strftime('%Y-%m-%d')}",
+        unread=True
+    )
+    log = ActivityLog(
+        text=f"Booked resource {res.name} on {booking.start_time.strftime('%Y-%m-%d')}",
+        user=current_user.name
+    )
+    db.add(notif)
+    db.add(log)
+
     db.commit()
     db.refresh(new_booking)
     return new_booking

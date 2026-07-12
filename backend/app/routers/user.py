@@ -62,12 +62,32 @@ def update_user(
         )
 
 
-    for key,value in data.model_dump(
-        exclude_unset=True
-    ).items():
+    approved_now = False
+    changes = data.model_dump(exclude_unset=True)
+    if "is_active" in changes and changes["is_active"] is True and not user.status:
+        approved_now = True
 
+    for key,value in changes.items():
         setattr(user,key,value)
 
+    if approved_now:
+        from app.models.activity import Notification, ActivityLog
+        from datetime import datetime
+        notif = Notification(
+            user_id=user.id,
+            type="Approvals",
+            title="Account Approved",
+            text="Your AssetFlow registration has been approved. Welcome to the system!",
+            unread=True,
+            created_at=datetime.utcnow()
+        )
+        log = ActivityLog(
+            text=f"Approved user registration for {user.name}",
+            user="Admin",
+            created_at=datetime.utcnow()
+        )
+        db.add(notif)
+        db.add(log)
 
     db.commit()
     db.refresh(user)

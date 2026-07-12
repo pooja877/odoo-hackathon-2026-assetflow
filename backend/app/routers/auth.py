@@ -41,6 +41,25 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
 
+    # Create notification and log
+    from app.models.activity import Notification, ActivityLog
+    notif = Notification(
+        user_id=None,  # Null user_id targets Admins
+        type="Approvals",
+        title="New User Registration",
+        text=f"New user {new_user.name} ({new_user.email}) registered and is awaiting approval.",
+        unread=True,
+        created_at=datetime.utcnow()
+    )
+    log = ActivityLog(
+        text=f"User {new_user.name} registered and is pending approval",
+        user="System",
+        created_at=datetime.utcnow()
+    )
+    db.add(notif)
+    db.add(log)
+    db.commit()
+
     if is_first_user:
         return {"message": "Admin account created and approved successfully"}
     return {"message": "Account created successfully. Pending administrator approval."}

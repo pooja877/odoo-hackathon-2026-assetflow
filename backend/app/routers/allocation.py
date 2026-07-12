@@ -44,6 +44,25 @@ def allocate_asset(
         asset.department_id = payload.department_id
         
     db.add(new_alloc)
+
+    # Create notification and log
+    from app.models.activity import Notification, ActivityLog
+    if payload.user_id:
+        notif = Notification(
+            user_id=payload.user_id,
+            type="Approvals",
+            title="Asset Allocated",
+            text=f"Asset {asset.name} ({asset.asset_tag}) has been allocated to you.",
+            unread=True
+        )
+        db.add(notif)
+        
+    log = ActivityLog(
+        text=f"Allocated asset {asset.name} ({asset.asset_tag})",
+        user=current_user.name
+    )
+    db.add(log)
+
     db.commit()
     db.refresh(new_alloc)
     return new_alloc
@@ -127,6 +146,28 @@ def request_transfer(
     if active_alloc:
         active_alloc.status = "Transfer Pending"
         
-    # Create new placeholder allocation representing the pending transfer
+    # Fetch department name
+    from app.models.department import Department
+    target_dept = db.get(Department, payload.target_department_id)
+    dept_name = target_dept.name if target_dept else f"Dept #{payload.target_department_id}"
+
+    # Create notification and log
+    from app.models.activity import Notification, ActivityLog
+    notif = Notification(
+        user_id=None,  # Targets Admins/global approvals
+        type="Approvals",
+        title="Transfer Request Submitted",
+        text=f"{current_user.name} requested transfer of {asset.name} ({asset.asset_tag}) to {dept_name}.",
+        unread=True,
+        created_at=datetime.utcnow()
+    )
+    log = ActivityLog(
+        text=f"Requested transfer of {asset.name} ({asset.asset_tag}) to {dept_name}",
+        user=current_user.name,
+        created_at=datetime.utcnow()
+    )
+    db.add(notif)
+    db.add(log)
+
     db.commit()
     return {"message": "Transfer request submitted successfully"}
