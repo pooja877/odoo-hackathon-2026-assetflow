@@ -2,7 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
-from app.routers import auth, department, user, stats, booking
+from app.routers import auth, department, user, stats, booking, asset, category
+
+from app.models.asset import Asset
+from app.models.category import Category
 from app.models.department import Department
 from app.models.user import User
 from app.models.booking import Resource, Booking
@@ -15,7 +18,7 @@ app = FastAPI(title="AssetFlow API")
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change this later for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -27,7 +30,8 @@ app.include_router(department.router)
 app.include_router(user.router)
 app.include_router(stats.router)
 app.include_router(booking.router)
-
+app.include_router(category.router)
+app.include_router(asset.router)
 
 @app.get("/")
 def root():
