@@ -25,6 +25,7 @@ export default function AssetDirectory() {
   const [filters, setFilters] = useState({});
   const [selected, setSelected] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const { showToast } = useToast();
 
@@ -106,6 +107,45 @@ export default function AssetDirectory() {
       return matchSearch && matchFilters;
     });
   }, [assetsList, search, filters, categoriesList, departmentsList]);
+
+  const editDefaultValues = useMemo(() => {
+    if (!selected) return null;
+    const catName = categoriesList.find((c) => c.id === selected.category_id)?.name || selected.category || '';
+    const deptName = departmentsList.find((d) => d.id === selected.department_id)?.name || selected.department || '';
+    return {
+      tag: selected.asset_tag || selected.id,
+      name: selected.name,
+      category: catName,
+      status: selected.status,
+      department: deptName,
+      location: selected.location,
+      notes: selected.notes || '',
+    };
+  }, [selected, categoriesList, departmentsList]);
+
+  const handleEdit = async (formData) => {
+    try {
+      let catId = categoriesList.find((c) => c.name.toLowerCase() === formData.category.toLowerCase())?.id;
+      if (!catId && categoriesList.length > 0) catId = categoriesList[0].id;
+      let deptId = departmentsList.find((d) => d.name.toLowerCase() === formData.department?.toLowerCase())?.id;
+
+      const payload = {
+        name: formData.name,
+        category_id: catId || 1,
+        department_id: deptId || null,
+        location: formData.location || 'Bengaluru HQ',
+        status: formData.status,
+      };
+
+      await assetService.updateAsset(selected.id, payload);
+      showToast('Asset updated successfully.', 'success');
+      setSelected(null);
+      loadData();
+    } catch (err) {
+      showToast(err.message || 'Failed to update asset.', 'error');
+    }
+    setEditModalOpen(false);
+  };
 
   const handleCreate = async (formData) => {
     try {
@@ -226,7 +266,7 @@ export default function AssetDirectory() {
               </div>
 
               <div className="mt-6 flex gap-2">
-                <button className="btn-secondary flex-1 cursor-pointer">Edit</button>
+                <button onClick={() => setEditModalOpen(true)} className="btn-secondary flex-1 cursor-pointer">Edit</button>
                 <button className="btn-primary flex-1 cursor-pointer">View Allocation</button>
               </div>
             </div>
@@ -243,6 +283,21 @@ export default function AssetDirectory() {
         <AssetForm
           onSubmit={handleCreate}
           onCancel={() => setModalOpen(false)}
+          categories={categoriesList}
+          departments={departmentsList}
+        />
+      </Modal>
+
+      <Modal
+        open={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        title="Edit Asset"
+        subtitle="Modify asset details"
+      >
+        <AssetForm
+          defaultValues={editDefaultValues}
+          onSubmit={handleEdit}
+          onCancel={() => setEditModalOpen(false)}
           categories={categoriesList}
           departments={departmentsList}
         />

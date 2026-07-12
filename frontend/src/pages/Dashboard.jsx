@@ -1,16 +1,14 @@
 import { useState, useEffect } from 'react';
-import { PackagePlus, CalendarPlus, FileWarning, ArrowRight, Users, CheckCircle2, User, Building, BookOpen, AlertCircle, HelpCircle } from 'lucide-react';
+import { PackagePlus, CalendarPlus, FileWarning, AlertCircle } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import DashboardCards from '../components/DashboardCards';
 import { UtilizationChart, MaintenanceFrequencyChart } from '../components/Charts';
-import NotificationCard from '../components/NotificationCard';
 import Modal from '../components/Modal';
 import AssetForm from '../components/AssetForm';
 import BookingForm from '../components/BookingForm';
 import { useToast } from '../components/Toast';
 import authService from '../services/authService';
 import api from '../services/api';
-import { recentActivity, notifications } from '../data/dummyData';
 
 const QUICK_ACTIONS = [
   { key: 'register', label: 'Register Asset', icon: PackagePlus },
@@ -23,9 +21,13 @@ export default function Dashboard() {
   const [stats, setStats] = useState({
     total_users: 0,
     pending_approvals: 0,
-    total_assets: 300,
-    available_assets: 80,
+    total_assets: 0,
+    available_assets: 0,
   });
+  const [utilizationData, setUtilizationData] = useState([]);
+  const [maintenanceFrequencyData, setMaintenanceFrequencyData] = useState([]);
+  const [recentActivityList, setRecentActivityList] = useState([]);
+  const [assignedAssets, setAssignedAssets] = useState([]);
   const [departmentName, setDepartmentName] = useState('Unassigned');
   const [loading, setLoading] = useState(false);
   const { showToast } = useToast();
@@ -33,65 +35,124 @@ export default function Dashboard() {
   const user = authService.getCurrentUser() || { name: 'Rahul', role: 'Employee', employee_id: 'EMP001' };
   const isAdmin = user?.role === 'Admin';
 
-  // Load Admin Stats or Employee Department details
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      try {
-        if (isAdmin) {
-          const res = await api.get('/stats');
-          setStats(res.data);
-        } else {
-          // Employee: load department name
-          if (user.department_id) {
-            const res = await api.get(`/departments/${user.department_id}`);
-            setDepartmentName(res.data.name);
-          }
+  const loadDashboardData = async () => {
+    setLoading(true);
+    try {
+      if (isAdmin) {
+        // Load Admin dynamic data
+        const [statsRes, utilRes, maintRes, actRes] = await Promise.all([
+          api.get('/stats'),
+          api.get('/reports/utilization'),
+          api.get('/reports/maintenance-frequency'),
+          api.get('/notifications/activity-logs'),
+        ]);
+        setStats(statsRes.data);
+        setUtilizationData(utilRes.data);
+        setMaintenanceFrequencyData(maintRes.data);
+        setRecentActivityList(actRes.data.slice(0, 5));
+      } else {
+        // Load Employee department details
+        if (user.department_id) {
+          const res = await api.get(`/departments/${user.department_id}`);
+          setDepartmentName(res.data.name);
         }
-      } catch (err) {
-        console.error('Failed to load dashboard data', err);
-      } finally {
-        setLoading(false);
+        // Load assigned assets dynamically
+        const [allocRes, assetsRes] = await Promise.all([
+          api.get('/allocations'),
+          api.get('/assets')
+        ]);
+        const myAllocations = allocRes.data.filter(a => a.user_id === user.id && a.status === 'Allocated');
+        const myAssets = myAllocations.map(alloc => {
+          const assetObj = assetsRes.data.find(ast => ast.id === alloc.asset_id);
+          return {
+            id: alloc.id,
+            name: assetObj?.name || 'Assigned Item',
+            serial: assetObj?.serial_number || '—',
+            assigned: new Date(alloc.allocated_at).toLocaleDateString()
+          };
+        });
+        setAssignedAssets(myAssets);
       }
-    };
-    loadData();
-  }, [isAdmin, user.department_id]);
+    } catch (err) {
+      console.error('Failed to load dashboard data', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const handleAsset = async () => {
-    await new Promise((r) => setTimeout(r, 500));
-    showToast('Asset registered successfully.', 'success');
+  useEffect(() => {
+    loadDashboardData();
+  }, [isAdmin, user.department_id, user.id]);
+
+  const handleAsset = async (formData) => {
+    try {
+      const payload = {
+        name: formData.name,
+        serial_number: `SN-${Math.floor(100000 + Math.random() * 900000)}`,
+        acquisition_date: new Date().toISOString().split('T')[0],
+        acquisition_cost: 0.00,
+        condition: 'Good',
+        location: formData.location || 'Bengaluru HQ',
+        photo_url: null,
+        is_shared: false,
+        status: formData.status || 'Available',
+        category_id: 1,
+        department_id: 1,
+      };
+      await api.post('/assets', payload);
+      showToast('Asset registered successfully.', 'success');
+      loadDashboardData();
+    } catch (err) {
+      showToast('Failed to register asset.', 'error');
+    }
     setActiveModal(null);
   };
 
-  const handleBooking = async () => {
-    await new Promise((r) => setTimeout(r, 500));
-    showToast('Resource booked successfully.', 'success');
+  const handleBooking = async (formData) => {
+    try {
+      const payload = {
+        resource_id: parseInt(formData.resourceId),
+        date: formData.date,
+        start_time: formData.startTime,
+        end_time: formData.endTime,
+        purpose: formData.purpose,
+      };
+      await api.post('/bookings', payload);
+      showToast('Resource booked successfully.', 'success');
+      loadDashboardData();
+    } catch (err) {
+      showToast(err.response?.data?.detail || 'Failed to book resource.', 'error');
+    }
     setActiveModal(null);
   };
 
-  // 1. ADMIN DASHBOARD VIEW
+  const handleRaise = async (formData) => {
+    try {
+      const assetsRes = await api.get('/assets');
+      const asset = assetsRes.data.find(a => a.asset_tag.toLowerCase() === formData.assetId.toLowerCase());
+      if (!asset) {
+        showToast('Asset tag not found.', 'error');
+        return;
+      }
+      await api.post('/maintenance', {
+        asset_id: asset.id,
+        description: formData.issue,
+        priority: formData.priority,
+      });
+      showToast('Maintenance request submitted successfully.', 'success');
+      loadDashboardData();
+    } catch (err) {
+      showToast('Failed to submit maintenance request.', 'error');
+    }
+    setActiveModal(null);
+  };
+
   if (isAdmin) {
     const adminKpis = [
       { label: 'Total Users', value: stats.total_users.toString(), change: 'Registered users', changeType: 'positive' },
       { label: 'Pending Approvals', value: stats.pending_approvals.toString(), change: 'Awaiting registration', changeType: 'neutral' },
       { label: 'Total Assets', value: stats.total_assets.toString(), change: 'Hardware items', changeType: 'positive' },
       { label: 'Available Assets', value: stats.available_assets.toString(), change: 'In storage', changeType: 'positive' },
-    ];
-
-    // Dummy utilization chart data
-    const utilizationData = [
-      { name: 'Engineering', active: 85, idle: 15 },
-      { name: 'Design', active: 70, idle: 30 },
-      { name: 'Marketing', active: 60, idle: 40 },
-      { name: 'Operations', active: 90, idle: 10 },
-    ];
-
-    // Dummy maintenance chart data
-    const maintenanceFrequencyData = [
-      { name: 'Laptops', count: 12 },
-      { name: 'Monitors', count: 4 },
-      { name: 'Servers', count: 19 },
-      { name: 'Printers', count: 6 },
     ];
 
     return (
@@ -106,7 +167,13 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="surface-card p-5 lg:col-span-2">
             <h3 className="mb-4 text-sm font-semibold text-text">Asset Utilization by Department</h3>
-            <UtilizationChart data={utilizationData} />
+            {loading ? (
+              <div className="h-[260px] flex items-center justify-center">
+                <span className="w-6 h-6 border-2 border-purple-200 border-t-purple-600 rounded-full animate-spin"></span>
+              </div>
+            ) : (
+              <UtilizationChart data={utilizationData} />
+            )}
           </div>
 
           <div className="surface-card p-5">
@@ -122,14 +189,9 @@ export default function Dashboard() {
                     <Icon size={16} className="text-brand-light" />
                     {label}
                   </span>
-                  <ArrowRight size={14} className="text-text-secondary" />
+                  <span className="text-text-secondary">→</span>
                 </button>
               ))}
-            </div>
-
-            <div className="mt-5 rounded-lg border border-danger/25 bg-danger-bg px-3.5 py-3">
-              <p className="text-sm font-medium text-danger">3 assets overdue for return</p>
-              <p className="mt-0.5 text-xs text-red-300/80">Flagged for follow-up with department leads.</p>
             </div>
           </div>
         </div>
@@ -137,59 +199,75 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="surface-card p-5 lg:col-span-2">
             <h3 className="mb-4 text-sm font-semibold text-text">Maintenance Frequency</h3>
-            <MaintenanceFrequencyChart data={maintenanceFrequencyData} />
+            {loading ? (
+              <div className="h-[260px] flex items-center justify-center">
+                <span className="w-6 h-6 border-2 border-purple-200 border-t-purple-600 rounded-full animate-spin"></span>
+              </div>
+            ) : (
+              <MaintenanceFrequencyChart data={maintenanceFrequencyData} />
+            )}
           </div>
 
           <div className="surface-card p-5">
             <h3 className="mb-4 text-sm font-semibold text-text">Recent Activity</h3>
             <div className="space-y-4">
-              {recentActivity.map((a) => (
+              {recentActivityList.map((a) => (
                 <div key={a.id} className="flex gap-3">
                   <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
                   <div>
-                    <p className="text-sm text-text">{a.text}</p>
-                    <p className="mt-0.5 text-xs text-gray-500">{a.time}</p>
+                    <p className="text-sm text-text font-medium">{a.text}</p>
+                    <p className="mt-0.5 text-xs text-gray-500">{new Date(a.created_at).toLocaleTimeString()}</p>
                   </div>
                 </div>
               ))}
+              {recentActivityList.length === 0 && (
+                <p className="text-xs text-gray-500 py-4 text-center">No recent activity logged.</p>
+              )}
             </div>
           </div>
         </div>
 
-        <Modal
-          open={activeModal === 'register'}
-          onClose={() => setActiveModal(null)}
-          title="Register New Asset"
-          subtitle="Add a new asset to the directory"
-        >
+        <Modal open={activeModal === 'register'} onClose={() => setActiveModal(null)} title="Register New Asset">
           <AssetForm onSubmit={handleAsset} onCancel={() => setActiveModal(null)} />
         </Modal>
 
-        <Modal
-          open={activeModal === 'book'}
-          onClose={() => setActiveModal(null)}
-          title="Book a Resource"
-          subtitle="Reserve a room, vehicle, or equipment"
-        >
-          <BookingForm resource="Conference Room B2" onSubmit={handleBooking} onCancel={() => setActiveModal(null)} />
+        <Modal open={activeModal === 'book'} onClose={() => setActiveModal(null)} title="Book New Resource">
+          <BookingForm onSubmit={handleBooking} onCancel={() => setActiveModal(null)} />
         </Modal>
 
-        <Modal
-          open={activeModal === 'raise'}
-          onClose={() => setActiveModal(null)}
-          title="Raise a Request"
-          subtitle="Choose the type of request to raise"
-        >
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {['Maintenance', 'Transfer', 'New Asset'].map((t) => (
-              <button
-                key={t}
-                onClick={() => { setActiveModal(null); showToast(`${t} request started.`, 'info'); }}
-                className="btn-secondary py-4 cursor-pointer"
-              >
-                {t}
-              </button>
-            ))}
+        <Modal open={activeModal === 'raise'} onClose={() => setActiveModal(null)} title="Raise Ticket">
+          <div className="p-4">
+            <p className="text-xs text-text-secondary mb-3">Submit issue details to request maintenance assignment.</p>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const form = e.target;
+              handleRaise({
+                assetId: form.elements.assetId.value,
+                issue: form.elements.issue.value,
+                priority: form.elements.priority.value
+              });
+            }} className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-text mb-1 block">Asset Tag</label>
+                <input required name="assetId" placeholder="e.g. AST-DELL5440" className="input-base text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-text mb-1 block">Issue Description</label>
+                <textarea required name="issue" placeholder="Describe the fault..." className="input-base text-sm h-20" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-text mb-1 block">Priority</label>
+                <select name="priority" className="input-base text-sm">
+                  <option value="High">High</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Low">Low</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setActiveModal(null)} className="btn-secondary text-xs">Cancel</button>
+                <button type="submit" className="btn-primary text-xs">Submit</button>
+              </div>
+            </form>
           </div>
         </Modal>
       </div>
@@ -244,10 +322,7 @@ export default function Dashboard() {
           <h3 className="text-sm font-semibold text-text mb-4">My Assigned Assets</h3>
           
           <div className="space-y-3">
-            {[
-              { id: 1, name: 'Dell Latitude Laptop', serial: 'SN-77291-DL', assigned: 'Jan 2026' },
-              { id: 2, name: 'Dell 24" UltraSharp Monitor', serial: 'SN-88201-MN', assigned: 'Feb 2026' },
-            ].map((asset) => (
+            {assignedAssets.map((asset) => (
               <div key={asset.id} className="flex items-center justify-between p-4 rounded-xl border border-border bg-bg-surface hover:border-brand/35 transition-colors">
                 <div>
                   <h4 className="font-bold text-sm text-text">{asset.name}</h4>
@@ -259,35 +334,10 @@ export default function Dashboard() {
                 </div>
               </div>
             ))}
+            {assignedAssets.length === 0 && (
+              <p className="text-xs text-gray-500 py-6 text-center">No assets currently allocated to your profile.</p>
+            )}
           </div>
-
-          {/* Quick actions for Employees */}
-          <div className="mt-8 flex flex-wrap gap-3">
-            <button
-              onClick={() => showToast('Asset requests are locked for Phase 1. Asset module will be added next.', 'info')}
-              className="btn-primary cursor-pointer text-xs py-2 px-4"
-            >
-              Request New Asset
-            </button>
-            <button
-              onClick={() => showToast('Issue reporting is locked for Phase 1. Maintenance request forms will be added next.', 'info')}
-              className="btn-secondary cursor-pointer text-xs py-2 px-4"
-            >
-              Report Issue / Return Asset
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Helpful links */}
-      <div className="surface-card p-6">
-        <h3 className="text-sm font-semibold text-text mb-2">Request History</h3>
-        <p className="text-xs text-text-secondary leading-relaxed mb-4">
-          All your requests for hardware, transfers, or maintenance tickets are audited and visible. In Phase 1, you can view your assigned profile and department. Asset history audits will be unlocked in Phase 2.
-        </p>
-        <div className="border border-border/60 bg-bg-card p-4 rounded-xl flex items-center gap-3">
-          <AlertCircle className="w-5 h-5 text-brand" />
-          <span className="text-xs text-text">No active requests pending approval.</span>
         </div>
       </div>
     </div>
