@@ -17,6 +17,10 @@ const auditService = {
     const { data } = await api.post(`/audits/${auditId}/close`);
     return data;
   },
+  async startAuditCycle(payload) {
+    const { data } = await api.post('/audits', payload);
+    return data;
+  },
 };
 
 export default auditService;

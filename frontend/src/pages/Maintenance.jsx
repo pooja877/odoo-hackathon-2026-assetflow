@@ -5,7 +5,6 @@ import Modal from '../components/Modal';
 import MaintenanceForm from '../components/MaintenanceForm';
 import { useToast } from '../components/Toast';
 import maintenanceService from '../services/maintenanceService';
-import { maintenanceBoard } from '../data/dummyData';
 
 const COLUMNS = [
   { key: 'pending', label: 'Pending', dot: 'bg-gray-400' },
@@ -22,7 +21,7 @@ const PRIORITY_STYLE = {
 };
 
 export default function Maintenance() {
-  const [board, setBoard] = useState(maintenanceBoard);
+  const [board, setBoard] = useState({ pending: [], approved: [], assigned: [], inProgress: [], resolved: [] });
   const [dragItem, setDragItem] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -32,13 +31,12 @@ export default function Maintenance() {
     setLoading(true);
     try {
       const tickets = await maintenanceService.getTickets();
-      // Group tickets by status
       const newBoard = { pending: [], approved: [], assigned: [], inProgress: [], resolved: [] };
       tickets.forEach((t) => {
         const col = t.status || 'pending';
         if (newBoard[col]) {
           newBoard[col].push({
-            id: t.asset_tag || `TKT-${t.id}`,
+            id: t.id,
             name: t.description || 'Repair request',
             priority: t.priority || 'Medium',
             technician: t.technician || 'Unassigned',
@@ -47,8 +45,7 @@ export default function Maintenance() {
       });
       setBoard(newBoard);
     } catch (err) {
-      console.warn('Backend getTickets failed, falling back to mock board.', err);
-      setBoard(maintenanceBoard);
+      showToast('Failed to load maintenance tickets.', 'error');
     } finally {
       setLoading(false);
     }
@@ -73,10 +70,10 @@ export default function Maintenance() {
 
     try {
       await maintenanceService.updateTicketStatus(item.id, colKey);
-      showToast(`${item.id} moved to ${COLUMNS.find((c) => c.key === colKey).label}.`, 'info');
+      showToast(`Ticket #${item.id} status updated to ${COLUMNS.find((c) => c.key === colKey).label}.`, 'info');
     } catch (err) {
-      console.warn('Backend updateTicketStatus failed, simulating move locally.', err);
-      showToast(`${item.id} moved to ${COLUMNS.find((c) => c.key === colKey).label} (simulated).`, 'info');
+      showToast(err.message || 'Failed to update ticket status on server.', 'error');
+      loadTickets(); // Revert on failure
     }
     setDragItem(null);
   };
@@ -84,26 +81,14 @@ export default function Maintenance() {
   const handleRaise = async (formData) => {
     try {
       await maintenanceService.createTicket({
-        asset_id: formData.assetId || 1,
+        asset_id: formData.assetId,
         description: formData.issue,
         priority: formData.priority,
       });
       showToast('Maintenance request raised successfully.', 'success');
       loadTickets();
     } catch (err) {
-      console.warn('Backend createTicket failed, simulating ticket creation.', err);
-      showToast('Maintenance request raised successfully (simulated).', 'success');
-      
-      const newTkt = {
-        id: formData.assetId || 'AF-0012',
-        name: formData.issue,
-        priority: formData.priority,
-        technician: 'Unassigned',
-      };
-      setBoard((prev) => ({
-        ...prev,
-        pending: [newTkt, ...prev.pending],
-      }));
+      showToast(err.message || 'Failed to raise maintenance ticket.', 'error');
     }
     setModalOpen(false);
   };
@@ -152,7 +137,7 @@ export default function Maintenance() {
                     className="group relative flex flex-col gap-2 rounded-lg border border-border bg-bg-surface p-3 hover:border-brand/40 cursor-grab active:cursor-grabbing transition-colors"
                   >
                     <div className="flex items-start justify-between gap-1">
-                      <span className="font-mono text-[10px] text-brand-light font-semibold">{item.id}</span>
+                      <span className="font-mono text-[10px] text-brand-light font-semibold">TKT #{item.id}</span>
                       <GripVertical size={13} className="text-text-secondary opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
                     <p className="text-xs text-text font-medium leading-normal">{item.name}</p>

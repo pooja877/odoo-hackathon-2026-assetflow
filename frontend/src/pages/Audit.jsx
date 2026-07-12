@@ -8,31 +8,39 @@ import ConfirmModal from '../components/ConfirmModal';
 import AuditForm from '../components/AuditForm';
 import { useToast } from '../components/Toast';
 import auditService from '../services/auditService';
-import { auditChecklist } from '../data/dummyData';
 
 export default function Audit() {
   const [checklist, setChecklist] = useState([]);
+  const [cycles, setCycles] = useState([]);
+  const [activeCycle, setActiveCycle] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const { showToast } = useToast();
 
-  const loadChecklist = async () => {
+  const loadData = async () => {
     setLoading(true);
     try {
-      // Use standard id 1 for checking live audit cycle list
-      const data = await auditService.getChecklist(1);
-      setChecklist(data);
+      const allCycles = await auditService.getAuditCycles();
+      setCycles(allCycles);
+      const active = allCycles.find((c) => c.status === 'Active');
+      setActiveCycle(active);
+
+      if (active) {
+        const items = await auditService.getChecklist(active.id);
+        setChecklist(items);
+      } else {
+        setChecklist([]);
+      }
     } catch (err) {
-      console.warn('Backend getChecklist failed, falling back to mock checklist.', err);
-      setChecklist(auditChecklist);
+      showToast('Failed to load audit cycles data.', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadChecklist();
+    loadData();
   }, []);
 
   const counts = {
@@ -42,19 +50,21 @@ export default function Audit() {
   };
 
   const handleVerify = async (itemId, newStatus) => {
+    if (!activeCycle) return;
     // Optimistic UI update
     setChecklist((prev) => prev.map((i) => (i.id === itemId ? { ...i, status: newStatus } : i)));
     try {
-      await auditService.verifyItem(1, itemId, { status: newStatus });
+      await auditService.verifyItem(activeCycle.id, itemId, { status: newStatus });
       showToast(`Asset status updated to ${newStatus}.`, 'success');
     } catch (err) {
-      console.warn('Backend verifyItem failed, simulating locally.', err);
+      showToast('Failed to save status on server.', 'error');
+      loadData(); // Revert
     }
   };
 
   const columns = [
-    { key: 'asset', label: 'Asset' },
-    { key: 'expectedLocation', label: 'Expected Location' },
+    { key: 'asset_id', label: 'Asset ID' },
+    { key: 'expected_location', label: 'Expected Location' },
     {
       key: 'status',
       label: 'Verification',
@@ -64,9 +74,10 @@ export default function Audit() {
           onChange={(e) => handleVerify(r.id, e.target.value)}
           className="rounded-lg border border-border bg-bg-surface px-2.5 py-1.5 text-xs text-text focus:border-brand focus:outline-none cursor-pointer"
         >
-          <option>Verified</option>
-          <option>Missing</option>
-          <option>Damaged</option>
+          <option value="Pending">Pending</option>
+          <option value="Verified">Verified</option>
+          <option value="Missing">Missing</option>
+          <option value="Damaged">Damaged</option>
         </select>
       ),
     },
@@ -75,24 +86,31 @@ export default function Audit() {
 
   const handleStartAudit = async (formData) => {
     try {
-      await auditService.getAuditCycles(formData);
-      showToast('New audit cycle started.', 'success');
-      loadChecklist();
+      const todayStr = new Date().toISOString().split('T')[0];
+      const payload = {
+        name: formData.name,
+        scope_type: 'Department',
+        scope_id: parseInt(formData.scope) || 1,
+        start_date: todayStr,
+        end_date: todayStr,
+      };
+      await auditService.startAuditCycle(payload);
+      showToast('New audit cycle started successfully.', 'success');
+      loadData();
     } catch (err) {
-      console.warn('Backend startAudit failed, simulating locally.', err);
-      showToast('New audit cycle started (simulated).', 'success');
+      showToast(err.message || 'Failed to start audit cycle.', 'error');
     }
     setModalOpen(false);
   };
 
   const handleClose = async () => {
+    if (!activeCycle) return;
     try {
-      await auditService.closeAudit(1);
+      await auditService.closeAudit(activeCycle.id);
       showToast('Audit cycle closed. Discrepancy report generated.', 'success');
-      loadChecklist();
+      loadData();
     } catch (err) {
-      console.warn('Backend closeAudit failed, simulating locally.', err);
-      showToast('Audit cycle closed. Discrepancy report generated (simulated).', 'success');
+      showToast('Failed to close audit cycle.', 'error');
     }
     setConfirmOpen(false);
   };
@@ -104,9 +122,11 @@ export default function Audit() {
         subtitle="Perform physical audit checklists and log discrepancies."
         actions={
           <div className="flex gap-2">
-            <button onClick={() => setConfirmOpen(true)} className="btn-secondary flex items-center gap-1.5 cursor-pointer">
-              <Lock size={15} /> Close Cycle
-            </button>
+            {activeCycle && (
+              <button onClick={() => setConfirmOpen(true)} className="btn-secondary flex items-center gap-1.5 cursor-pointer">
+                <Lock size={15} /> Close Cycle
+              </button>
+            )}
             <button onClick={() => setModalOpen(true)} className="btn-primary flex items-center gap-1.5 cursor-pointer">
               <Plus size={15} /> Start Audit
             </button>
@@ -118,7 +138,7 @@ export default function Audit() {
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         {[
           { label: 'Verified Assets', value: counts.verified, color: 'text-success', icon: CheckCircle2, bg: 'bg-success/10' },
-          { label: 'Missing Assets', value: counts.missing, color: 'text-warning', icon: HelpCircle, bg: 'bg-warning/10' },
+          { label: 'Missing/Lost', value: counts.missing, color: 'text-warning', icon: HelpCircle, bg: 'bg-warning/10' },
           { label: 'Damaged Assets', value: counts.damaged, color: 'text-danger', icon: AlertOctagon, bg: 'bg-danger/10' },
         ].map(({ label, value, color, icon: Icon, bg }) => (
           <div key={label} className="surface-card flex items-center justify-between p-5">
@@ -137,8 +157,12 @@ export default function Audit() {
         <div className="flex justify-center p-12">
           <span className="w-8 h-8 border-2 border-purple-200 border-t-purple-600 rounded-full animate-spin"></span>
         </div>
-      ) : (
+      ) : activeCycle ? (
         <DataTable columns={columns} data={checklist} emptyMessage="No items in the active audit checklist" />
+      ) : (
+        <div className="text-center py-12 text-slate-500 font-semibold text-sm">
+          No active audit cycle. Please start a new cycle to deploy checklist tasks.
+        </div>
       )}
 
       <Modal

@@ -10,7 +10,6 @@ import AssetForm from '../components/AssetForm';
 import { useToast } from '../components/Toast';
 import assetService from '../services/assetService';
 import api from '../services/api';
-import { assets } from '../data/dummyData';
 
 const filterConfig = [
   { key: 'category', label: 'Category', options: ['Electronics', 'Furniture', 'Vehicles'] },
@@ -32,31 +31,14 @@ export default function AssetDirectory() {
   const loadData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch categories
-      let cats = [];
-      try {
-        cats = await assetService.getCategories();
-        setCategoriesList(cats);
-      } catch (e) {
-        console.warn('Failed to load categories from backend', e);
-      }
-
-      // 2. Fetch departments
-      let depts = [];
-      try {
-        const res = await api.get('/departments');
-        depts = res.data;
-        setDepartmentsList(depts);
-      } catch (e) {
-        console.warn('Failed to load departments from backend', e);
-      }
-
-      // 3. Fetch assets
+      const cats = await assetService.getCategories();
+      setCategoriesList(cats);
+      const res = await api.get('/departments');
+      setDepartmentsList(res.data);
       const data = await assetService.getAssets();
       setAssetsList(data);
     } catch (err) {
-      console.warn('Backend /assets not fully implemented yet, falling back to mock data.', err);
-      setAssetsList(assets);
+      showToast('Failed to load assets from server.', 'error');
     } finally {
       setLoading(false);
     }
@@ -127,22 +109,20 @@ export default function AssetDirectory() {
 
   const handleCreate = async (formData) => {
     try {
-      // Find category and department IDs (lookup by name string)
       let catId = categoriesList.find((c) => c.name.toLowerCase() === formData.category.toLowerCase())?.id;
       if (!catId && categoriesList.length > 0) {
         catId = categoriesList[0].id;
       } else if (!catId) {
-        catId = 1; // Fallback
+        catId = 1;
       }
 
       let deptId = departmentsList.find((d) => d.name.toLowerCase() === formData.department?.toLowerCase())?.id;
       if (!deptId && departmentsList.length > 0) {
         deptId = departmentsList[0].id;
       } else if (!deptId) {
-        deptId = 1; // Fallback
+        deptId = 1;
       }
 
-      // Construct backend schema compliant payload
       const payload = {
         name: formData.name,
         serial_number: `SN-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -161,18 +141,7 @@ export default function AssetDirectory() {
       showToast('Asset registered successfully.', 'success');
       loadData();
     } catch (err) {
-      console.warn('Backend createAsset failed, simulating locally.', err);
-      showToast('Asset registered (simulated).', 'success');
-      // Locally simulate addition for smooth UX
-      const newAsset = {
-        id: `AF-${Math.floor(1000 + Math.random() * 9000)}`,
-        name: formData.name,
-        category: formData.category,
-        status: formData.status || 'Available',
-        department: formData.department || '—',
-        location: formData.location || 'Warehouse',
-      };
-      setAssetsList((p) => [newAsset, ...p]);
+      showToast(err.message || 'Failed to register asset.', 'error');
     }
     setModalOpen(false);
   };

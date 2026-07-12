@@ -6,7 +6,6 @@ import NotificationCard from '../components/NotificationCard';
 import EmptyState from '../components/EmptyState';
 import { useToast } from '../components/Toast';
 import notificationService from '../services/notificationService';
-import { notifications as initialNotifications, activityLogs } from '../data/dummyData';
 
 const TABS = [
   { key: 'notifications', label: 'Notifications' },
@@ -31,8 +30,7 @@ export default function Notifications() {
       const data = await notificationService.getNotifications();
       setItems(data);
     } catch (err) {
-      console.warn('Backend getNotifications failed, falling back to mock notifications.', err);
-      setItems(initialNotifications);
+      showToast('Failed to load notifications.', 'error');
     } finally {
       setLoading(false);
     }
@@ -43,8 +41,7 @@ export default function Notifications() {
       const data = await notificationService.getActivityLogs();
       setLogs(data);
     } catch (err) {
-      console.warn('Backend getActivityLogs failed, falling back to mock logs.', err);
-      setLogs(activityLogs);
+      showToast('Failed to load activity logs.', 'error');
     }
   };
 
@@ -67,8 +64,8 @@ export default function Notifications() {
       await notificationService.markAllAsRead();
       showToast('All notifications marked as read.', 'success');
     } catch (err) {
-      console.warn('Backend markAllAsRead failed, simulated locally.', err);
-      showToast('All notifications marked as read (simulated).', 'success');
+      showToast('Failed to mark all read on server.', 'error');
+      loadNotifications();
     }
   };
 
@@ -77,7 +74,7 @@ export default function Notifications() {
     try {
       await notificationService.markAsRead(n.id);
     } catch (err) {
-      console.warn('Backend markAsRead failed, simulated locally.', err);
+      console.warn('Failed to mark read on server', err);
     }
   };
 
@@ -141,7 +138,7 @@ export default function Notifications() {
                     Performed by: <span className="font-semibold text-text">{log.user || 'System'}</span>
                   </p>
                 </div>
-                <span className="text-xs text-text-secondary">{log.time}</span>
+                <span className="text-xs text-text-secondary">{log.created_at || log.time}</span>
               </div>
             ))}
             {logs.length === 0 && (

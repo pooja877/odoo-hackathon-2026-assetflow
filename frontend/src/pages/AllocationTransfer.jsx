@@ -5,14 +5,11 @@ import { TransferForm } from '../components/AllocationForm';
 import { useToast } from '../components/Toast';
 import allocationService from '../services/allocationService';
 import assetService from '../services/assetService';
-import { currentAllocation, allocationHistory, assets } from '../data/dummyData';
 
 export default function AllocationTransfer() {
   const [selectedAsset, setSelectedAsset] = useState('');
   const [assetsList, setAssetsList] = useState([]);
-  const [allocations, setAllocations] = useState([]);
   const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(false);
   const { showToast } = useToast();
 
   const loadAssets = async () => {
@@ -23,11 +20,7 @@ export default function AllocationTransfer() {
         setSelectedAsset(data[0].id);
       }
     } catch (err) {
-      console.warn('Backend getAssets failed, falling back to mock assets.', err);
-      setAssetsList(assets);
-      if (assets.length > 0) {
-        setSelectedAsset(assets[0].id);
-      }
+      showToast('Failed to load assets list.', 'error');
     }
   };
 
@@ -37,8 +30,7 @@ export default function AllocationTransfer() {
       const hist = await allocationService.getHistory(selectedAsset);
       setHistory(hist);
     } catch (err) {
-      console.warn('Backend getHistory failed, falling back to mock history.', err);
-      setHistory(allocationHistory);
+      showToast('Failed to load allocation history.', 'error');
     }
   };
 
@@ -50,7 +42,8 @@ export default function AllocationTransfer() {
     loadHistory();
   }, [selectedAsset]);
 
-  const isAllocated = selectedAsset === 'AF-0114';
+  const activeAssetObj = assetsList.find(a => String(a.id) === String(selectedAsset));
+  const isAllocated = activeAssetObj?.status === 'Allocated';
 
   const handleTransfer = async (formData) => {
     try {
@@ -62,8 +55,7 @@ export default function AllocationTransfer() {
       showToast('Transfer request submitted for approval.', 'success');
       loadHistory();
     } catch (err) {
-      console.warn('Backend transfer failed, simulating request.', err);
-      showToast('Transfer request submitted (simulated).', 'success');
+      showToast(err.message || 'Failed to submit transfer request.', 'error');
     }
   };
 
@@ -83,7 +75,7 @@ export default function AllocationTransfer() {
             className="input-base mb-5"
           >
             {assetsList.map((a) => (
-              <option key={a.id} value={a.id}>{a.id} — {a.name}</option>
+              <option key={a.id} value={a.id}>{a.asset_tag || a.id} — {a.name}</option>
             ))}
           </select>
 
@@ -93,16 +85,16 @@ export default function AllocationTransfer() {
                 <AlertCircle size={18} className="mt-0.5 shrink-0 text-danger" />
                 <div>
                   <p className="text-sm font-medium text-danger">
-                    Already allocated — currently assigned to {currentAllocation.assignedTo}
+                    Already allocated.
                   </p>
                   <p className="mt-0.5 text-xs text-red-300/80">
-                    {currentAllocation.department} department, since {currentAllocation.since}. Re-allocation is blocked — submit a transfer request below.
+                    Direct re-allocation is blocked — submit a transfer request below.
                   </p>
                 </div>
               </div>
 
               <h4 className="mb-3 text-sm font-semibold text-text">Transfer Request</h4>
-              <TransferForm currentHolder={currentAllocation.assignedTo} onSubmit={handleTransfer} />
+              <TransferForm currentHolder="Assigned" onSubmit={handleTransfer} />
             </>
           ) : (
             <>
@@ -120,10 +112,13 @@ export default function AllocationTransfer() {
           <div className="space-y-4">
             {history.map((h) => (
               <div key={h.id} className="border-l-2 border-border pl-3.5">
-                <p className="text-xs text-text-secondary">{h.date}</p>
-                <p className="mt-0.5 text-sm text-text">{h.event}</p>
+                <p className="text-xs text-text-secondary">{h.allocated_at || h.date}</p>
+                <p className="mt-0.5 text-sm text-text">Allocated status: {h.status}</p>
               </div>
             ))}
+            {history.length === 0 && (
+              <p className="text-xs text-slate-500">No allocation history for this asset.</p>
+            )}
           </div>
         </div>
       </div>
