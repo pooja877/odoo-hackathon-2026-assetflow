@@ -29,6 +29,9 @@ export default function AssetDirectory() {
   const [loading, setLoading] = useState(false);
   const { showToast } = useToast();
 
+  const userObj = authService.getCurrentUser();
+  const isAdmin = userObj?.role === 'Admin';
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -36,7 +39,15 @@ export default function AssetDirectory() {
       setCategoriesList(cats);
       const res = await api.get('/departments');
       setDepartmentsList(res.data);
-      const data = await assetService.getAssets();
+      
+      let data = await assetService.getAssets();
+      if (!isAdmin && userObj) {
+        const allocRes = await api.get('/allocations');
+        const myAllocatedIds = allocRes.data
+          .filter((a) => a.user_id === userObj.id && a.status === 'Allocated')
+          .map((a) => a.asset_id);
+        data = data.filter((asset) => myAllocatedIds.includes(asset.id));
+      }
       setAssetsList(data);
     } catch (err) {
       showToast('Failed to load assets from server.', 'error');
@@ -192,9 +203,11 @@ export default function AssetDirectory() {
         title="Asset Directory"
         subtitle="Search, filter, and manage every asset in your organization."
         actions={
-          <button onClick={() => setModalOpen(true)} className="btn-primary cursor-pointer">
-            <Plus size={16} /> Register Asset
-          </button>
+          isAdmin && (
+            <button onClick={() => setModalOpen(true)} className="btn-primary cursor-pointer">
+              <Plus size={16} /> Register Asset
+            </button>
+          )
         }
       />
 
@@ -266,7 +279,7 @@ export default function AssetDirectory() {
               </div>
 
               <div className="mt-6 flex gap-2">
-                <button onClick={() => setEditModalOpen(true)} className="btn-secondary flex-1 cursor-pointer">Edit</button>
+                {isAdmin && <button onClick={() => setEditModalOpen(true)} className="btn-secondary flex-1 cursor-pointer">Edit</button>}
                 <button className="btn-primary flex-1 cursor-pointer">View Allocation</button>
               </div>
             </div>
