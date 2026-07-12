@@ -40,14 +40,7 @@ export default function AssetDirectory() {
       const res = await api.get('/departments');
       setDepartmentsList(res.data);
       
-      let data = await assetService.getAssets();
-      if (!isAdmin && userObj) {
-        const allocRes = await api.get('/allocations');
-        const myAllocatedIds = allocRes.data
-          .filter((a) => a.user_id === userObj.id && a.status === 'Allocated')
-          .map((a) => a.asset_id);
-        data = data.filter((asset) => myAllocatedIds.includes(asset.id));
-      }
+      const data = await assetService.getAssets();
       setAssetsList(data);
     } catch (err) {
       showToast('Failed to load assets from server.', 'error');
