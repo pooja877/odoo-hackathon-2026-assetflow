@@ -9,6 +9,7 @@ import Modal from '../components/Modal';
 import AssetForm from '../components/AssetForm';
 import { useToast } from '../components/Toast';
 import assetService from '../services/assetService';
+import api from '../services/api';
 import { assets } from '../data/dummyData';
 
 const filterConfig = [
@@ -19,6 +20,8 @@ const filterConfig = [
 
 export default function AssetDirectory() {
   const [assetsList, setAssetsList] = useState([]);
+  const [categoriesList, setCategoriesList] = useState([]);
+  const [departmentsList, setDepartmentsList] = useState([]);
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({});
   const [selected, setSelected] = useState(null);
@@ -26,9 +29,29 @@ export default function AssetDirectory() {
   const [loading, setLoading] = useState(false);
   const { showToast } = useToast();
 
-  const loadAssets = async () => {
+  const loadData = async () => {
     setLoading(true);
     try {
+      // 1. Fetch categories
+      let cats = [];
+      try {
+        cats = await assetService.getCategories();
+        setCategoriesList(cats);
+      } catch (e) {
+        console.warn('Failed to load categories from backend', e);
+      }
+
+      // 2. Fetch departments
+      let depts = [];
+      try {
+        const res = await api.get('/departments');
+        depts = res.data;
+        setDepartmentsList(depts);
+      } catch (e) {
+        console.warn('Failed to load departments from backend', e);
+      }
+
+      // 3. Fetch assets
       const data = await assetService.getAssets();
       setAssetsList(data);
     } catch (err) {
@@ -40,34 +63,103 @@ export default function AssetDirectory() {
   };
 
   useEffect(() => {
-    loadAssets();
+    loadData();
   }, []);
 
   const columns = [
-    { key: 'id', label: 'Asset Tag', render: (r) => <span className="font-mono text-xs text-brand-light">{r.id}</span> },
+    { key: 'asset_tag', label: 'Asset Tag', render: (r) => <span className="font-mono text-xs text-brand-light">{r.asset_tag || r.id}</span> },
     { key: 'name', label: 'Name' },
-    { key: 'category', label: 'Category' },
+    {
+      key: 'category_id',
+      label: 'Category',
+      render: (r) => {
+        if (r.category_id) {
+          return categoriesList.find((c) => c.id === r.category_id)?.name || '—';
+        }
+        return r.category || '—';
+      }
+    },
     { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
-    { key: 'department', label: 'Department' },
+    {
+      key: 'department_id',
+      label: 'Department',
+      render: (r) => {
+        if (r.department_id) {
+          return departmentsList.find((d) => d.id === r.department_id)?.name || '—';
+        }
+        return r.department || '—';
+      }
+    },
     { key: 'location', label: 'Location' },
   ];
 
   const filtered = useMemo(() => {
     return assetsList.filter((a) => {
+      const tagVal = a.asset_tag || a.id || '';
+      const nameVal = a.name || '';
       const matchSearch =
         !search ||
-        a.id.toLowerCase().includes(search.toLowerCase()) ||
-        a.name.toLowerCase().includes(search.toLowerCase());
-      const matchFilters = Object.entries(filters).every(([k, v]) => !v || a[k] === v);
+        tagVal.toLowerCase().includes(search.toLowerCase()) ||
+        nameVal.toLowerCase().includes(search.toLowerCase());
+      
+      const matchFilters = Object.entries(filters).every(([k, v]) => {
+        if (!v) return true;
+        if (k === 'category') {
+          if (a.category_id) {
+            const catName = categoriesList.find((c) => c.id === a.category_id)?.name || '';
+            return catName === v;
+          }
+          return a.category === v;
+        }
+        if (k === 'department') {
+          if (a.department_id) {
+            const deptName = departmentsList.find((d) => d.id === a.department_id)?.name || '';
+            return deptName === v;
+          }
+          return a.department === v;
+        }
+        return a[k] === v;
+      });
+
       return matchSearch && matchFilters;
     });
-  }, [assetsList, search, filters]);
+  }, [assetsList, search, filters, categoriesList, departmentsList]);
 
   const handleCreate = async (formData) => {
     try {
-      await assetService.createAsset(formData);
+      // Find category and department IDs (lookup by name string)
+      let catId = categoriesList.find((c) => c.name.toLowerCase() === formData.category.toLowerCase())?.id;
+      if (!catId && categoriesList.length > 0) {
+        catId = categoriesList[0].id;
+      } else if (!catId) {
+        catId = 1; // Fallback
+      }
+
+      let deptId = departmentsList.find((d) => d.name.toLowerCase() === formData.department?.toLowerCase())?.id;
+      if (!deptId && departmentsList.length > 0) {
+        deptId = departmentsList[0].id;
+      } else if (!deptId) {
+        deptId = 1; // Fallback
+      }
+
+      // Construct backend schema compliant payload
+      const payload = {
+        name: formData.name,
+        serial_number: `SN-${Math.floor(100000 + Math.random() * 900000)}`,
+        acquisition_date: new Date().toISOString().split('T')[0],
+        acquisition_cost: 0.00,
+        condition: 'Good',
+        location: formData.location || 'Bengaluru HQ',
+        photo_url: null,
+        is_shared: false,
+        status: formData.status || 'Available',
+        category_id: catId,
+        department_id: deptId,
+      };
+
+      await assetService.createAsset(payload);
       showToast('Asset registered successfully.', 'success');
-      loadAssets();
+      loadData();
     } catch (err) {
       console.warn('Backend createAsset failed, simulating locally.', err);
       showToast('Asset registered (simulated).', 'success');
@@ -76,8 +168,8 @@ export default function AssetDirectory() {
         id: `AF-${Math.floor(1000 + Math.random() * 9000)}`,
         name: formData.name,
         category: formData.category,
-        status: 'Available',
-        department: '—',
+        status: formData.status || 'Available',
+        department: formData.department || '—',
         location: formData.location || 'Warehouse',
       };
       setAssetsList((p) => [newAsset, ...p]);
@@ -127,7 +219,7 @@ export default function AssetDirectory() {
                   <QrCode size={22} className="text-brand-light" />
                 </div>
                 <div>
-                  <p className="font-mono text-sm text-brand-light">{selected.id}</p>
+                  <p className="font-mono text-sm text-brand-light">{selected.asset_tag || selected.id}</p>
                   <p className="text-lg font-semibold text-text">{selected.name}</p>
                 </div>
               </div>
@@ -138,8 +230,20 @@ export default function AssetDirectory() {
 
               <div className="space-y-4">
                 {[
-                  { icon: Tag, label: 'Category', value: selected.category },
-                  { icon: Building2, label: 'Department', value: selected.department },
+                  {
+                    icon: Tag,
+                    label: 'Category',
+                    value: selected.category_id
+                      ? categoriesList.find((c) => c.id === selected.category_id)?.name
+                      : selected.category
+                  },
+                  {
+                    icon: Building2,
+                    label: 'Department',
+                    value: selected.department_id
+                      ? departmentsList.find((d) => d.id === selected.department_id)?.name
+                      : selected.department
+                  },
                   { icon: MapPin, label: 'Location', value: selected.location },
                 ].map(({ icon: Icon, label, value }) => (
                   <div key={label} className="flex items-center gap-3 rounded-lg border border-border bg-bg-surface px-4 py-3">
@@ -167,7 +271,12 @@ export default function AssetDirectory() {
         title="Register New Asset"
         subtitle="Add a new asset to the directory"
       >
-        <AssetForm onSubmit={handleCreate} onCancel={() => setModalOpen(false)} />
+        <AssetForm
+          onSubmit={handleCreate}
+          onCancel={() => setModalOpen(false)}
+          categories={categoriesList}
+          departments={departmentsList}
+        />
       </Modal>
     </div>
   );

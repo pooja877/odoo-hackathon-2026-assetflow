@@ -22,7 +22,7 @@ const assetService = {
     return data;
   },
   async getCategories() {
-    const { data } = await api.get('/assets/categories');
+    const { data } = await api.get('/categories');
     return data;
   },
 };

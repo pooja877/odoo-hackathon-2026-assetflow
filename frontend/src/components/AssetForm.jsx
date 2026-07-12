@@ -1,11 +1,9 @@
 import { useForm } from 'react-hook-form';
 import { useState } from 'react';
 
-const CATEGORY_OPTIONS = ['Electronics', 'Furniture', 'Vehicles', 'Tools & Equipment'];
-const DEPARTMENT_OPTIONS = ['Engineering', 'Facilities', 'Field Ops', 'IT', 'Sales'];
 const STATUS_OPTIONS = ['Available', 'Allocated', 'Maintenance', 'Lost'];
 
-export default function AssetForm({ defaultValues, onSubmit, onCancel }) {
+export default function AssetForm({ defaultValues, onSubmit, onCancel, categories = [], departments = [] }) {
   const [submitting, setSubmitting] = useState(false);
   const {
     register,
@@ -28,11 +26,11 @@ export default function AssetForm({ defaultValues, onSubmit, onCancel }) {
         <div>
           <label className="label-base">Asset Tag</label>
           <input
-            {...register('tag', { required: 'Asset tag is required' })}
-            className="input-base"
-            placeholder="AF-0001"
+            {...register('tag')}
+            className="input-base opacity-75"
+            placeholder="Auto-generated AST-XXXX"
+            disabled
           />
-          {errors.tag && <p className="mt-1 text-xs text-danger">{errors.tag.message}</p>}
         </div>
         <div>
           <label className="label-base">Asset Name</label>
@@ -49,9 +47,12 @@ export default function AssetForm({ defaultValues, onSubmit, onCancel }) {
         <div>
           <label className="label-base">Category</label>
           <select {...register('category', { required: true })} className="input-base">
-            {CATEGORY_OPTIONS.map((c) => (
-              <option key={c} value={c}>{c}</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.name}>{c.name}</option>
             ))}
+            {categories.length === 0 && (
+              ['Electronics', 'Furniture', 'Vehicles'].map(c => <option key={c} value={c}>{c}</option>)
+            )}
           </select>
         </div>
         <div>
@@ -69,9 +70,12 @@ export default function AssetForm({ defaultValues, onSubmit, onCancel }) {
           <label className="label-base">Department</label>
           <select {...register('department')} className="input-base">
             <option value="">Unassigned</option>
-            {DEPARTMENT_OPTIONS.map((d) => (
-              <option key={d} value={d}>{d}</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.name}>{d.name}</option>
             ))}
+            {departments.length === 0 && (
+              ['Engineering', 'Facilities', 'Field Ops', 'IT', 'Sales'].map(d => <option key={d} value={d}>{d}</option>)
+            )}
           </select>
         </div>
         <div>
