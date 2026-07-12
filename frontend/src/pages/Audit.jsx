@@ -8,6 +8,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import AuditForm from '../components/AuditForm';
 import { useToast } from '../components/Toast';
 import auditService from '../services/auditService';
+import assetService from '../services/assetService';
 
 export default function Audit() {
   const [checklist, setChecklist] = useState([]);
@@ -21,14 +22,25 @@ export default function Audit() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const allCycles = await auditService.getAuditCycles();
+      const [allCycles, assets] = await Promise.all([
+        auditService.getAuditCycles(),
+        assetService.getAssets()
+      ]);
       setCycles(allCycles);
       const active = allCycles.find((c) => c.status === 'Active');
       setActiveCycle(active);
 
       if (active) {
         const items = await auditService.getChecklist(active.id);
-        setChecklist(items);
+        const mappedItems = items.map(item => {
+          const assetObj = assets.find(a => a.id === item.asset_id);
+          return {
+            ...item,
+            assetTag: assetObj ? assetObj.asset_tag : `AST-${item.asset_id}`,
+            assetName: assetObj ? assetObj.name : 'Unknown Asset'
+          };
+        });
+        setChecklist(mappedItems);
       } else {
         setChecklist([]);
       }
@@ -63,7 +75,8 @@ export default function Audit() {
   };
 
   const columns = [
-    { key: 'asset_id', label: 'Asset ID' },
+    { key: 'assetTag', label: 'Asset Tag', render: (r) => <span className="font-mono text-xs text-brand-light">{r.assetTag}</span> },
+    { key: 'assetName', label: 'Asset Name' },
     { key: 'expected_location', label: 'Expected Location' },
     {
       key: 'status',
@@ -84,16 +97,8 @@ export default function Audit() {
     { key: 'badge', label: '', render: (r) => <StatusBadge status={r.status} /> },
   ];
 
-  const handleStartAudit = async (formData) => {
+  const handleStartAudit = async (payload) => {
     try {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const payload = {
-        name: formData.name,
-        scope_type: 'Department',
-        scope_id: parseInt(formData.scope) || 1,
-        start_date: todayStr,
-        end_date: todayStr,
-      };
       await auditService.startAuditCycle(payload);
       showToast('New audit cycle started successfully.', 'success');
       loadData();

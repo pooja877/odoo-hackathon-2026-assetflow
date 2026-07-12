@@ -5,6 +5,7 @@ import Modal from '../components/Modal';
 import MaintenanceForm from '../components/MaintenanceForm';
 import { useToast } from '../components/Toast';
 import maintenanceService from '../services/maintenanceService';
+import assetService from '../services/assetService';
 
 const COLUMNS = [
   { key: 'pending', label: 'Pending', dot: 'bg-gray-400' },
@@ -30,14 +31,20 @@ export default function Maintenance() {
   const loadTickets = async () => {
     setLoading(true);
     try {
-      const tickets = await maintenanceService.getTickets();
+      const [tickets, assets] = await Promise.all([
+        maintenanceService.getTickets(),
+        assetService.getAssets()
+      ]);
       const newBoard = { pending: [], approved: [], assigned: [], inProgress: [], resolved: [] };
       tickets.forEach((t) => {
         const col = t.status || 'pending';
         if (newBoard[col]) {
+          const asset = assets.find((a) => a.id === t.asset_id);
           newBoard[col].push({
             id: t.id,
-            name: t.description || 'Repair request',
+            description: t.description || 'Repair request',
+            assetName: asset ? asset.name : 'Unknown Asset',
+            assetTag: asset ? asset.asset_tag : `AST-${t.asset_id}`,
             priority: t.priority || 'Medium',
             technician: t.technician || 'Unassigned',
           });
@@ -137,10 +144,11 @@ export default function Maintenance() {
                     className="group relative flex flex-col gap-2 rounded-lg border border-border bg-bg-surface p-3 hover:border-brand/40 cursor-grab active:cursor-grabbing transition-colors"
                   >
                     <div className="flex items-start justify-between gap-1">
-                      <span className="font-mono text-[10px] text-brand-light font-semibold">TKT #{item.id}</span>
+                      <span className="font-mono text-[10px] text-brand-light font-semibold">{item.assetTag} · TKT #{item.id}</span>
                       <GripVertical size={13} className="text-text-secondary opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
-                    <p className="text-xs text-text font-medium leading-normal">{item.name}</p>
+                    <p className="text-xs text-text font-bold leading-normal">{item.assetName}</p>
+                    <p className="text-[11px] text-text-secondary leading-snug">"{item.description}"</p>
                     <div className="mt-1 flex items-center justify-between">
                       <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${PRIORITY_STYLE[item.priority]}`}>
                         {item.priority}
