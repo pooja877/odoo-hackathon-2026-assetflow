@@ -27,7 +27,7 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
         email=user.email,
         password=hash_password(user.password),
         role="Admin" if is_first_user else "Employee",
-        is_active=True if is_first_user else False,
+        status=True if is_first_user else False,
         department_id=user.department_id,
         designation=user.designation
     )
