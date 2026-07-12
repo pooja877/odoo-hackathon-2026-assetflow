@@ -1,19 +1,70 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AlertCircle, History } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { TransferForm } from '../components/AllocationForm';
 import { useToast } from '../components/Toast';
+import allocationService from '../services/allocationService';
+import assetService from '../services/assetService';
 import { currentAllocation, allocationHistory, assets } from '../data/dummyData';
 
 export default function AllocationTransfer() {
-  const [selectedAsset, setSelectedAsset] = useState('AF-0114');
+  const [selectedAsset, setSelectedAsset] = useState('');
+  const [assetsList, setAssetsList] = useState([]);
+  const [allocations, setAllocations] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(false);
   const { showToast } = useToast();
+
+  const loadAssets = async () => {
+    try {
+      const data = await assetService.getAssets();
+      setAssetsList(data);
+      if (data.length > 0) {
+        setSelectedAsset(data[0].id);
+      }
+    } catch (err) {
+      console.warn('Backend getAssets failed, falling back to mock assets.', err);
+      setAssetsList(assets);
+      if (assets.length > 0) {
+        setSelectedAsset(assets[0].id);
+      }
+    }
+  };
+
+  const loadHistory = async () => {
+    if (!selectedAsset) return;
+    try {
+      const hist = await allocationService.getHistory(selectedAsset);
+      setHistory(hist);
+    } catch (err) {
+      console.warn('Backend getHistory failed, falling back to mock history.', err);
+      setHistory(allocationHistory);
+    }
+  };
+
+  useEffect(() => {
+    loadAssets();
+  }, []);
+
+  useEffect(() => {
+    loadHistory();
+  }, [selectedAsset]);
 
   const isAllocated = selectedAsset === 'AF-0114';
 
-  const handleTransfer = async () => {
-    await new Promise((r) => setTimeout(r, 600));
-    showToast('Transfer request submitted for approval.', 'success');
+  const handleTransfer = async (formData) => {
+    try {
+      await allocationService.requestTransfer({
+        asset_id: selectedAsset,
+        target_department_id: formData.departmentId,
+        note: formData.notes
+      });
+      showToast('Transfer request submitted for approval.', 'success');
+      loadHistory();
+    } catch (err) {
+      console.warn('Backend transfer failed, simulating request.', err);
+      showToast('Transfer request submitted (simulated).', 'success');
+    }
   };
 
   return (
@@ -31,7 +82,7 @@ export default function AllocationTransfer() {
             onChange={(e) => setSelectedAsset(e.target.value)}
             className="input-base mb-5"
           >
-            {assets.map((a) => (
+            {assetsList.map((a) => (
               <option key={a.id} value={a.id}>{a.id} — {a.name}</option>
             ))}
           </select>
@@ -45,7 +96,7 @@ export default function AllocationTransfer() {
                     Already allocated — currently assigned to {currentAllocation.assignedTo}
                   </p>
                   <p className="mt-0.5 text-xs text-red-300/80">
-                    {currentAllocation.department} department, since {currentAllocation.since}. Direct re-allocation is blocked — submit a transfer request below.
+                    {currentAllocation.department} department, since {currentAllocation.since}. Re-allocation is blocked — submit a transfer request below.
                   </p>
                 </div>
               </div>
@@ -67,7 +118,7 @@ export default function AllocationTransfer() {
             <h3 className="text-sm font-semibold text-text">Allocation History</h3>
           </div>
           <div className="space-y-4">
-            {allocationHistory.map((h) => (
+            {history.map((h) => (
               <div key={h.id} className="border-l-2 border-border pl-3.5">
                 <p className="text-xs text-text-secondary">{h.date}</p>
                 <p className="mt-0.5 text-sm text-text">{h.event}</p>

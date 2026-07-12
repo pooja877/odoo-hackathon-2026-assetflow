@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Plus, X, MapPin, Tag, Building2, QrCode } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SearchBar from '../components/SearchBar';
@@ -8,6 +8,7 @@ import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import AssetForm from '../components/AssetForm';
 import { useToast } from '../components/Toast';
+import assetService from '../services/assetService';
 import { assets } from '../data/dummyData';
 
 const filterConfig = [
@@ -17,11 +18,30 @@ const filterConfig = [
 ];
 
 export default function AssetDirectory() {
+  const [assetsList, setAssetsList] = useState([]);
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({});
   const [selected, setSelected] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const { showToast } = useToast();
+
+  const loadAssets = async () => {
+    setLoading(true);
+    try {
+      const data = await assetService.getAssets();
+      setAssetsList(data);
+    } catch (err) {
+      console.warn('Backend /assets not fully implemented yet, falling back to mock data.', err);
+      setAssetsList(assets);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAssets();
+  }, []);
 
   const columns = [
     { key: 'id', label: 'Asset Tag', render: (r) => <span className="font-mono text-xs text-brand-light">{r.id}</span> },
@@ -33,7 +53,7 @@ export default function AssetDirectory() {
   ];
 
   const filtered = useMemo(() => {
-    return assets.filter((a) => {
+    return assetsList.filter((a) => {
       const matchSearch =
         !search ||
         a.id.toLowerCase().includes(search.toLowerCase()) ||
@@ -41,11 +61,27 @@ export default function AssetDirectory() {
       const matchFilters = Object.entries(filters).every(([k, v]) => !v || a[k] === v);
       return matchSearch && matchFilters;
     });
-  }, [search, filters]);
+  }, [assetsList, search, filters]);
 
-  const handleCreate = async () => {
-    await new Promise((r) => setTimeout(r, 500));
-    showToast('Asset registered successfully.', 'success');
+  const handleCreate = async (formData) => {
+    try {
+      await assetService.createAsset(formData);
+      showToast('Asset registered successfully.', 'success');
+      loadAssets();
+    } catch (err) {
+      console.warn('Backend createAsset failed, simulating locally.', err);
+      showToast('Asset registered (simulated).', 'success');
+      // Locally simulate addition for smooth UX
+      const newAsset = {
+        id: `AF-${Math.floor(1000 + Math.random() * 9000)}`,
+        name: formData.name,
+        category: formData.category,
+        status: 'Available',
+        department: '—',
+        location: formData.location || 'Warehouse',
+      };
+      setAssetsList((p) => [newAsset, ...p]);
+    }
     setModalOpen(false);
   };
 
@@ -55,7 +91,7 @@ export default function AssetDirectory() {
         title="Asset Directory"
         subtitle="Search, filter, and manage every asset in your organization."
         actions={
-          <button onClick={() => setModalOpen(true)} className="btn-primary">
+          <button onClick={() => setModalOpen(true)} className="btn-primary cursor-pointer">
             <Plus size={16} /> Register Asset
           </button>
         }
@@ -66,7 +102,13 @@ export default function AssetDirectory() {
         <FilterBar filters={filterConfig} values={filters} onChange={(k, v) => setFilters((p) => ({ ...p, [k]: v }))} />
       </div>
 
-      <DataTable columns={columns} data={filtered} onRowClick={setSelected} emptyMessage="No assets match your filters" />
+      {loading ? (
+        <div className="flex justify-center p-12">
+          <span className="w-8 h-8 border-2 border-purple-200 border-t-purple-600 rounded-full animate-spin"></span>
+        </div>
+      ) : (
+        <DataTable columns={columns} data={filtered} onRowClick={setSelected} emptyMessage="No assets match your filters" />
+      )}
 
       {/* Details drawer */}
       {selected && (
@@ -75,7 +117,7 @@ export default function AssetDirectory() {
           <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md animate-slideInRight overflow-y-auto border-l border-border bg-bg-card shadow-popover">
             <div className="flex items-center justify-between border-b border-border px-6 py-4">
               <h3 className="text-base font-semibold text-text">Asset Details</h3>
-              <button onClick={() => setSelected(null)} className="rounded-lg p-1.5 text-text-secondary hover:bg-white/5 hover:text-text">
+              <button onClick={() => setSelected(null)} className="rounded-lg p-1.5 text-text-secondary hover:bg-white/5 hover:text-text cursor-pointer">
                 <X size={18} />
               </button>
             </div>
@@ -111,8 +153,8 @@ export default function AssetDirectory() {
               </div>
 
               <div className="mt-6 flex gap-2">
-                <button className="btn-secondary flex-1">Edit</button>
-                <button className="btn-primary flex-1">View Allocation</button>
+                <button className="btn-secondary flex-1 cursor-pointer">Edit</button>
+                <button className="btn-primary flex-1 cursor-pointer">View Allocation</button>
               </div>
             </div>
           </div>

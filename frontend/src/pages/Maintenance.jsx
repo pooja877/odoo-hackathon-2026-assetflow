@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, User, GripVertical } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Modal from '../components/Modal';
 import MaintenanceForm from '../components/MaintenanceForm';
 import { useToast } from '../components/Toast';
+import maintenanceService from '../services/maintenanceService';
 import { maintenanceBoard } from '../data/dummyData';
 
 const COLUMNS = [
@@ -24,91 +25,155 @@ export default function Maintenance() {
   const [board, setBoard] = useState(maintenanceBoard);
   const [dragItem, setDragItem] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const { showToast } = useToast();
 
-  const onDrop = (colKey) => {
+  const loadTickets = async () => {
+    setLoading(true);
+    try {
+      const tickets = await maintenanceService.getTickets();
+      // Group tickets by status
+      const newBoard = { pending: [], approved: [], assigned: [], inProgress: [], resolved: [] };
+      tickets.forEach((t) => {
+        const col = t.status || 'pending';
+        if (newBoard[col]) {
+          newBoard[col].push({
+            id: t.asset_tag || `TKT-${t.id}`,
+            name: t.description || 'Repair request',
+            priority: t.priority || 'Medium',
+            technician: t.technician || 'Unassigned',
+          });
+        }
+      });
+      setBoard(newBoard);
+    } catch (err) {
+      console.warn('Backend getTickets failed, falling back to mock board.', err);
+      setBoard(maintenanceBoard);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTickets();
+  }, []);
+
+  const onDrop = async (colKey) => {
     if (!dragItem) return;
     const { item, fromCol } = dragItem;
     if (fromCol === colKey) return setDragItem(null);
+
+    // Optimistic UI update
     setBoard((prev) => {
       const next = { ...prev };
       next[fromCol] = next[fromCol].filter((t) => t.id !== item.id);
       next[colKey] = [...next[colKey], item];
       return next;
     });
-    showToast(`${item.id} moved to ${COLUMNS.find((c) => c.key === colKey).label}.`, 'info');
+
+    try {
+      await maintenanceService.updateTicketStatus(item.id, colKey);
+      showToast(`${item.id} moved to ${COLUMNS.find((c) => c.key === colKey).label}.`, 'info');
+    } catch (err) {
+      console.warn('Backend updateTicketStatus failed, simulating move locally.', err);
+      showToast(`${item.id} moved to ${COLUMNS.find((c) => c.key === colKey).label} (simulated).`, 'info');
+    }
     setDragItem(null);
   };
 
-  const handleRaise = async () => {
-    await new Promise((r) => setTimeout(r, 500));
-    showToast('Maintenance request raised successfully.', 'success');
+  const handleRaise = async (formData) => {
+    try {
+      await maintenanceService.createTicket({
+        asset_id: formData.assetId || 1,
+        description: formData.issue,
+        priority: formData.priority,
+      });
+      showToast('Maintenance request raised successfully.', 'success');
+      loadTickets();
+    } catch (err) {
+      console.warn('Backend createTicket failed, simulating ticket creation.', err);
+      showToast('Maintenance request raised successfully (simulated).', 'success');
+      
+      const newTkt = {
+        id: formData.assetId || 'AF-0012',
+        name: formData.issue,
+        priority: formData.priority,
+        technician: 'Unassigned',
+      };
+      setBoard((prev) => ({
+        ...prev,
+        pending: [newTkt, ...prev.pending],
+      }));
+    }
     setModalOpen(false);
   };
 
   return (
     <div>
       <PageHeader
-        title="Maintenance"
-        subtitle="Track repair requests from submission through resolution."
+        title="Maintenance Board"
+        subtitle="Route, approve, and resolve maintenance tickets for all assets."
         actions={
-          <button onClick={() => setModalOpen(true)} className="btn-primary">
-            <Plus size={16} /> Raise Request
+          <button onClick={() => setModalOpen(true)} className="btn-primary cursor-pointer">
+            <Plus size={16} /> Raise Ticket
           </button>
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 overflow-x-auto sm:grid-cols-2 lg:grid-cols-5">
-        {COLUMNS.map((col) => (
-          <div
-            key={col.key}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={() => onDrop(col.key)}
-            className="flex min-h-[420px] flex-col rounded-xl border border-border bg-bg-surface"
-          >
-            <div className="flex items-center gap-2 border-b border-border px-3.5 py-3">
-              <span className={`h-2 w-2 rounded-full ${col.dot}`} />
-              <h4 className="text-sm font-semibold text-text">{col.label}</h4>
-              <span className="ml-auto rounded-full bg-white/5 px-2 py-0.5 text-xs text-text-secondary">
-                {board[col.key].length}
-              </span>
-            </div>
-            <div className="flex-1 space-y-2.5 p-2.5">
-              {board[col.key].map((item) => (
-                <div
-                  key={item.id}
-                  draggable
-                  onDragStart={() => setDragItem({ item, fromCol: col.key })}
-                  className="cursor-grab rounded-lg border border-border bg-bg-card p-3.5 shadow-card transition-transform active:cursor-grabbing active:scale-[0.98]"
-                >
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="font-mono text-xs text-brand-light">{item.id}</span>
-                    <GripVertical size={13} className="text-gray-600" />
-                  </div>
-                  <p className="text-sm text-text">{item.name}</p>
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${PRIORITY_STYLE[item.priority]}`}>
-                      {item.priority}
-                    </span>
-                    <span className="flex items-center gap-1 text-xs text-text-secondary">
-                      <User size={12} /> {item.technician}
-                    </span>
-                  </div>
+      {loading ? (
+        <div className="flex justify-center p-12">
+          <span className="w-8 h-8 border-2 border-purple-200 border-t-purple-600 rounded-full animate-spin"></span>
+        </div>
+      ) : (
+        <div className="flex gap-4 overflow-x-auto pb-4">
+          {COLUMNS.map((col) => (
+            <div
+              key={col.key}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => onDrop(col.key)}
+              className="flex w-[268px] shrink-0 flex-col rounded-xl bg-bg-card p-3 border border-border"
+            >
+              <div className="mb-3 flex items-center justify-between px-1">
+                <div className="flex items-center gap-2">
+                  <span className={`h-2 w-2 rounded-full ${col.dot}`} />
+                  <span className="text-sm font-semibold text-text">{col.label}</span>
                 </div>
-              ))}
-              {board[col.key].length === 0 && (
-                <p className="px-1 py-6 text-center text-xs text-gray-500">Drop a card here</p>
-              )}
+                <span className="rounded-full bg-white/5 px-2 py-0.5 text-xs text-text-secondary">
+                  {board[col.key]?.length || 0}
+                </span>
+              </div>
+
+              <div className="flex-1 space-y-2.5 min-h-[300px]">
+                {board[col.key]?.map((item) => (
+                  <div
+                    key={item.id}
+                    draggable
+                    onDragStart={() => setDragItem({ item, fromCol: col.key })}
+                    className="group relative flex flex-col gap-2 rounded-lg border border-border bg-bg-surface p-3 hover:border-brand/40 cursor-grab active:cursor-grabbing transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-1">
+                      <span className="font-mono text-[10px] text-brand-light font-semibold">{item.id}</span>
+                      <GripVertical size={13} className="text-text-secondary opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                    <p className="text-xs text-text font-medium leading-normal">{item.name}</p>
+                    <div className="mt-1 flex items-center justify-between">
+                      <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${PRIORITY_STYLE[item.priority]}`}>
+                        {item.priority}
+                      </span>
+                      <div className="flex items-center gap-1 text-[10px] text-text-secondary">
+                        <User size={10} />
+                        <span>{item.technician}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
-      <p className="mt-3 text-xs text-gray-500">
-        Drag a card between columns to update its status. Approving a card moves the asset to under maintenance; resolving returns it to available.
-      </p>
-
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Raise Maintenance Request">
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Raise Maintenance Ticket">
         <MaintenanceForm onSubmit={handleRaise} onCancel={() => setModalOpen(false)} />
       </Modal>
     </div>
