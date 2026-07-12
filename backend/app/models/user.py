@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from datetime import datetime
-
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import relationship
 from app.database import Base
 
 
@@ -17,7 +18,9 @@ class User(Base):
 
     role = Column(String, default="Employee")
 
-    department_id = Column(Integer, nullable=True)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+
+    department = relationship("Department", back_populates="users")
 
     is_active = Column(Boolean, default=True)
 
