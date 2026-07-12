@@ -11,6 +11,7 @@ import {
   Bell,
   ChevronsLeft,
   ChevronsRight,
+  User,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -24,10 +25,21 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onCloseMobile
     ? [
         { to: '/admin-dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { to: '/organization', label: 'Organization Setup', icon: Building2 },
+        { to: '/assets', label: 'Asset Management', icon: Boxes },
+        { to: '/allocations', label: 'Allocation & Transfer', icon: ArrowLeftRight },
+        { to: '/bookings', label: 'Resource Booking', icon: CalendarClock },
+        { to: '/maintenance', label: 'Maintenance', icon: Wrench },
+        { to: '/audit', label: 'Asset Audits', icon: ClipboardCheck },
+        { to: '/reports', label: 'Reports & Analytics', icon: BarChart3 },
+        { to: '/notifications', label: 'Notifications & Logs', icon: Bell },
       ]
     : [
-        { to: '/employee-dashboard', label: 'My Profile', icon: LayoutDashboard }, // using LayoutDashboard or User
+        { to: '/employee-dashboard', label: 'My Profile', icon: User },
         { to: '/organization', label: 'My Department', icon: Building2 },
+        { to: '/bookings', label: 'Resource Booking', icon: CalendarClock },
+        { to: '/assets', label: 'My Assigned Assets', icon: Boxes },
+        { to: '/maintenance', label: 'My Maintenance', icon: Wrench },
+        { to: '/notifications', label: 'Notifications', icon: Bell },
       ];
   return (
     <>
