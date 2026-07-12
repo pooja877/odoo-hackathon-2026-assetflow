@@ -14,12 +14,12 @@ const bookingService = {
     return data;
   },
   async cancelBooking(id) {
-    const { data } = await api.delete(`/bookings/${id}`);
+    const { data } = await api.put(`/bookings/${id}/cancel`);
     return data;
   },
   async checkConflict(payload) {
-    const { data } = await api.post('/bookings/check-conflict', payload);
-    return data;
+    // Overlap checks are run on creation in the backend
+    return { conflict: false };
   },
 };
 

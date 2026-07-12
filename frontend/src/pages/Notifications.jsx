@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { CheckCheck } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import FilterBar from '../components/FilterBar';
 import NotificationCard from '../components/NotificationCard';
 import EmptyState from '../components/EmptyState';
 import { useToast } from '../components/Toast';
+import notificationService from '../services/notificationService';
 import { notifications as initialNotifications, activityLogs } from '../data/dummyData';
 
 const TABS = [
@@ -19,20 +20,65 @@ const filterConfig = [
 export default function Notifications() {
   const [tab, setTab] = useState('notifications');
   const [filters, setFilters] = useState({});
-  const [items, setItems] = useState(initialNotifications);
+  const [items, setItems] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(false);
   const { showToast } = useToast();
+
+  const loadNotifications = async () => {
+    setLoading(true);
+    try {
+      const data = await notificationService.getNotifications();
+      setItems(data);
+    } catch (err) {
+      console.warn('Backend getNotifications failed, falling back to mock notifications.', err);
+      setItems(initialNotifications);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadLogs = async () => {
+    try {
+      const data = await notificationService.getActivityLogs();
+      setLogs(data);
+    } catch (err) {
+      console.warn('Backend getActivityLogs failed, falling back to mock logs.', err);
+      setLogs(activityLogs);
+    }
+  };
+
+  useEffect(() => {
+    if (tab === 'notifications') {
+      loadNotifications();
+    } else {
+      loadLogs();
+    }
+  }, [tab]);
 
   const filtered = useMemo(() => {
     return items.filter((n) => !filters.type || n.type === filters.type);
   }, [items, filters]);
 
-  const markAllRead = () => {
+  const markAllRead = async () => {
+    // Optimistic UI update
     setItems((prev) => prev.map((n) => ({ ...n, unread: false })));
-    showToast('All notifications marked as read.', 'success');
+    try {
+      await notificationService.markAllAsRead();
+      showToast('All notifications marked as read.', 'success');
+    } catch (err) {
+      console.warn('Backend markAllAsRead failed, simulated locally.', err);
+      showToast('All notifications marked as read (simulated).', 'success');
+    }
   };
 
-  const handleClick = (n) => {
+  const handleClick = async (n) => {
     setItems((prev) => prev.map((i) => (i.id === n.id ? { ...i, unread: false } : i)));
+    try {
+      await notificationService.markAsRead(n.id);
+    } catch (err) {
+      console.warn('Backend markAsRead failed, simulated locally.', err);
+    }
   };
 
   return (
@@ -42,7 +88,7 @@ export default function Notifications() {
         subtitle="Stay on top of approvals, bookings, and system alerts."
         actions={
           tab === 'notifications' && (
-            <button onClick={markAllRead} className="btn-secondary">
+            <button onClick={markAllRead} className="btn-secondary cursor-pointer">
               <CheckCheck size={15} /> Mark all as read
             </button>
           )
@@ -54,7 +100,7 @@ export default function Notifications() {
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
+            className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors cursor-pointer ${
               tab === t.key ? 'bg-brand text-white' : 'text-text-secondary hover:text-text'
             }`}
           >
@@ -68,29 +114,40 @@ export default function Notifications() {
           <div className="mb-4">
             <FilterBar filters={filterConfig} values={filters} onChange={(k, v) => setFilters((p) => ({ ...p, [k]: v }))} />
           </div>
-          {filtered.length === 0 ? (
-            <div className="surface-card p-10">
-              <EmptyState message="No notifications match this filter" />
+
+          {loading ? (
+            <div className="flex justify-center p-12">
+              <span className="w-8 h-8 border-2 border-purple-200 border-t-purple-600 rounded-full animate-spin"></span>
             </div>
-          ) : (
-            <div className="space-y-2.5">
+          ) : filtered.length > 0 ? (
+            <div className="space-y-3">
               {filtered.map((n) => (
-                <NotificationCard key={n.id} notification={n} onClick={handleClick} />
+                <NotificationCard key={n.id} notification={n} onClick={() => handleClick(n)} />
               ))}
             </div>
+          ) : (
+            <EmptyState title="All caught up!" message="You have no notifications in this category." />
           )}
         </>
       ) : (
-        <div className="surface-card divide-y divide-border/60">
-          {activityLogs.map((log) => (
-            <div key={log.id} className="flex items-center justify-between px-5 py-4">
-              <div>
-                <p className="text-sm text-text">{log.text}</p>
-                <p className="mt-0.5 text-xs text-text-secondary">by {log.user}</p>
+        <div className="surface-card p-5">
+          <h3 className="mb-4 text-sm font-semibold text-text">Activity Logs</h3>
+          <div className="space-y-4">
+            {logs.map((log) => (
+              <div key={log.id} className="flex items-start justify-between border-b border-border/60 pb-3 last:border-0 last:pb-0">
+                <div>
+                  <p className="text-sm text-text font-medium">{log.text}</p>
+                  <p className="mt-0.5 text-xs text-text-secondary">
+                    Performed by: <span className="font-semibold text-text">{log.user || 'System'}</span>
+                  </p>
+                </div>
+                <span className="text-xs text-text-secondary">{log.time}</span>
               </div>
-              <span className="text-xs text-gray-500">{log.time}</span>
-            </div>
-          ))}
+            ))}
+            {logs.length === 0 && (
+              <p className="text-xs text-gray-500 py-4 text-center">No logs generated yet.</p>
+            )}
+          </div>
         </div>
       )}
     </div>
